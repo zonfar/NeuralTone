@@ -8,6 +8,10 @@ A standalone Windows app that generates pure binaural and isochronic tones in re
 
 Stack: Python, PySide6, numpy, sounddevice.
 
+## Presets
+
+The dropdown is split into **Binaural** (headphones required) and **Isochronic** groups, each with presets across gamma, beta, SMR, alpha, Schumann (7.83 Hz), theta and delta. Band associations follow commonly cited EEG ranges; the research on brainwave entrainment is mixed and effects vary by person, so treat presets as starting points, not medical treatment.
+
 ## Run
 
 ```

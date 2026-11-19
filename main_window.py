@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from presets import CUSTOM, PRESETS
+from presets import BINAURAL_PRESETS, CUSTOM, ISOCHRONIC_PRESETS, PRESETS, Preset
 from tone_generator import BINAURAL, ISOCHRONIC, ToneGenerator
 
 BASE_RANGE = (100.0, 1000.0)
@@ -98,7 +98,7 @@ class ScopeWidget(QWidget):
         p.drawPolyline(poly)
 
         p.setPen(QColor("#7f8896"))
-        p.drawText(10, 18, f"{self.beat:.1f} Hz  (slowed for display)")
+        p.drawText(10, 18, f"{self.beat:g} Hz  (slowed for display)")
         p.end()
 
 
@@ -122,8 +122,8 @@ class MainWindow(QMainWindow):
 
         # --- presets & controls
         self.preset_box = QComboBox()
-        self.preset_box.addItems([p.name for p in PRESETS] + [CUSTOM])
-        self.preset_box.setCurrentText(PRESETS[0].name)
+        self._fill_presets()
+        self.preset_box.setCurrentIndex(self.preset_box.findData(PRESETS[0]))
         self.use_case = QLabel()
         self.use_case.setObjectName("useCase")
         lay.addWidget(self.preset_box)
@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(hint)
 
         # --- signals
-        self.preset_box.currentTextChanged.connect(self._on_preset)
+        self.preset_box.currentIndexChanged.connect(self._on_preset_index)
         self.mode_group.buttonToggled.connect(self._on_mode)
         self.play_btn.toggled.connect(self._on_play)
         self.vol_slider.valueChanged.connect(self._on_volume)
@@ -183,14 +183,14 @@ class MainWindow(QMainWindow):
             spin.valueChanged.connect(self._on_manual_edit)
             slider.valueChanged.connect(lambda v, sp=spin: self._sync_spin(sp, v))
 
-        self._on_preset(PRESETS[0].name)
+        self._on_preset(PRESETS[0])
         self._on_volume(50)
 
     # ------------------------------------------------------------- helpers
     def _param_row(self, grid, row, label, rng):
         spin = QDoubleSpinBox()
         spin.setRange(*rng)
-        spin.setDecimals(1)
+        spin.setDecimals(2)
         spin.setSingleStep(0.5)
         spin.setSuffix(" Hz")
         slider = QSlider(Qt.Horizontal)
@@ -227,24 +227,45 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------ handlers
-    def _on_preset(self, name: str) -> None:
-        preset = next((p for p in PRESETS if p.name == name), None)
-        if preset is None:
+    def _fill_presets(self) -> None:
+        box = self.preset_box
+        for header, group in (
+            ("BINAURAL  (headphones required)", BINAURAL_PRESETS),
+            ("ISOCHRONIC  (speakers or headphones)", ISOCHRONIC_PRESETS),
+        ):
+            box.addItem(f"── {header} ──")
+            item = box.model().item(box.count() - 1)
+            item.setFlags(Qt.NoItemFlags)  # non-selectable heading
+            for p in group:
+                box.addItem(f"   {p.name}  ·  {p.target:g} Hz", p)
+        box.insertSeparator(box.count())
+        box.addItem(CUSTOM, CUSTOM)
+
+    def _is_custom(self) -> bool:
+        return self.preset_box.currentData() == CUSTOM
+
+    def _on_preset_index(self, index: int) -> None:
+        data = self.preset_box.itemData(index)
+        if isinstance(data, Preset):
+            self._on_preset(data)
+        else:
             self.use_case.setText("Manual settings")
-            return
+
+    def _on_preset(self, preset: Preset) -> None:
         self._loading = True
         (self.rb_bin if preset.mode == BINAURAL else self.rb_iso).setChecked(True)
         self.base_spin.setValue(preset.base)
         self.beat_spin.setValue(preset.target)
-        self.use_case.setText(preset.use_case)
+        kind = "Binaural · headphones required" if preset.mode == BINAURAL else "Isochronic · speakers or headphones"
+        self.use_case.setText(f"{kind}\n{preset.use_case}")
         self._loading = False
         self._update_labels()
         self._apply_to_engine()
 
     def _on_manual_edit(self, _value=None) -> None:
-        if not self._loading and self.preset_box.currentText() != CUSTOM:
+        if not self._loading and not self._is_custom():
             self.preset_box.blockSignals(True)
-            self.preset_box.setCurrentText(CUSTOM)
+            self.preset_box.setCurrentIndex(self.preset_box.findData(CUSTOM))
             self.preset_box.blockSignals(False)
             self.use_case.setText("Manual settings")
         self._apply_to_engine()
@@ -253,7 +274,7 @@ class MainWindow(QMainWindow):
         if not checked:
             return
         self._update_labels()
-        if not self._loading and self.preset_box.currentText() != CUSTOM:
+        if not self._loading and not self._is_custom():
             self._on_manual_edit()
         self._apply_to_engine()  # engine fades out, switches, fades back in
 
